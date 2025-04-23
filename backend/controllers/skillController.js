@@ -1,0 +1,76 @@
+// controllers/skillController.js
+const Skill = require('../models/Skill');
+
+// GET /api/skills
+exports.getSkills = async (req, res) => {
+  try {
+    const { category, experience, location, keyword } = req.query;
+    const query = {};
+    if (category)   query.category   = category;
+    if (experience) query.experience = experience;
+    if (location)   query.location   = location;
+    if (keyword) {
+      query.$or = [
+        { title:       { $regex: keyword, $options: 'i' } },
+        { description: { $regex: keyword, $options: 'i' } }
+      ];
+    }
+
+    const skills = await Skill
+      .find(query)
+      .select('title description category experience location price offeredBy createdAt')  // include price
+      .populate({
+        path: 'reviews',
+        populate: { path: 'user', select: 'username' }
+      });
+
+    res.status(200).json(skills);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching skills', error: error.message });
+  }
+};
+
+// GET /api/skills/:skillId
+exports.getSkillById = async (req, res) => {
+  try {
+    const { skillId } = req.params;
+    const skill = await Skill
+      .findById(skillId)
+      .select('title description category experience location price offeredBy createdAt')  // include price
+      .populate({
+        path: 'reviews',
+        populate: { path: 'user', select: 'username' }
+      });
+
+    if (!skill) {
+      return res.status(404).json({ message: 'Skill not found' });
+    }
+
+    res.status(200).json(skill);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching skill', error: error.message });
+  }
+};
+
+// POST /api/skills
+exports.createSkill = async (req, res) => {
+  try {
+    const { title, description, category, experience, price, location } = req.body;
+    const offeredBy = req.user?.userId || null;
+
+    const newSkill = new Skill({
+      title,
+      description,
+      category,
+      experience,
+      price,        // make sure price is being saved
+      location,
+      offeredBy
+    });
+
+    const saved = await newSkill.save();
+    res.status(201).json(saved);
+  } catch (err) {
+    res.status(500).json({ message: 'Error creating skill', error: err.message });
+  }
+};

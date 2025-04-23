@@ -1,0 +1,50 @@
+# Node.js dependencies
+node_modules/
+package-lock.json
+yarn.lock
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+
+# Next.js build outputs
+.next/
+out/
+.build/
+
+# Local environment files
+.env*
+!.env.example
+
+# Vercel / Netlify / AWS Amplify
+.vercel/
+.vercelignore
+.netlify/
+amplify/#current-cloud-backend
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / editor settings
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Optional: coverage & test output
+coverage/
+nyc_output/
+
+# Optional: local caches
+.cache/
+node_modules
+.env

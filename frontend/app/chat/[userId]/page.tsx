@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 
 interface RawMsg {
   sender: { _id: string }
@@ -16,13 +16,14 @@ interface Message {
 }
 
 export default function PrivateChatPage() {
-  const { userId } = useParams()          // the person you’re chatting with
+  const { userId } = useParams()
+  const router = useRouter()           // ← pull in router
   const [msgs, setMsgs] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [me, setMe] = useState<string>("")
+  const [chatWithName, setChatWithName] = useState<string>("")
   const endRef = useRef<HTMLDivElement>(null)
 
-  // decode my userId once
   useEffect(() => {
     const t = localStorage.getItem("token")
     if (!t) return
@@ -30,30 +31,37 @@ export default function PrivateChatPage() {
     setMe(d.userId)
   }, [])
 
-  // fetch history & then poll every 3s
+  useEffect(() => {
+    if (!userId) return
+    fetch(`http://localhost:5000/api/auth/users/${userId}`)
+      .then(res => res.json())
+      .then((data: { username?: string }) =>
+        setChatWithName(data.username || "")
+      )
+      .catch(console.error)
+  }, [userId])
+
   useEffect(() => {
     if (!me || !userId) return
-
     const load = () => {
       fetch(`http://localhost:5000/api/messages/private/${me}/${userId}`)
-        .then((r) => r.json())
-        .then((data: RawMsg[]) => {
-          const mapped = data.map((m) => ({
-            sender: m.sender._id,
-            message: m.message,
-            timestamp: m.createdAt
-          }))
-          setMsgs(mapped)
-        })
+        .then(r => r.json())
+        .then((data: RawMsg[]) =>
+          setMsgs(
+            data.map(m => ({
+              sender: m.sender._id,
+              message: m.message,
+              timestamp: m.createdAt
+            }))
+          )
+        )
         .catch(console.error)
     }
-
     load()
     const iv = setInterval(load, 3000)
     return () => clearInterval(iv)
   }, [me, userId])
 
-  // scroll on new messages
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [msgs])
@@ -61,26 +69,38 @@ export default function PrivateChatPage() {
   const send = () => {
     if (!input.trim()) return
     fetch(`http://localhost:5000/api/messages/private`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        sender:   me,
-        receiver: userId,
-        message:  input
-      })
-    }).then(() => setInput(''))
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sender: me, receiver: userId, message: input })
+    })
+      .then(() => setInput(""))
       .catch(console.error)
   }
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">
-      <div className="bg-indigo-600 text-white p-4">Chat with {userId}</div>
+      {/* Header with Back button */}
+      <div className="bg-indigo-600 text-white p-4 flex items-center">
+        <button
+          onClick={() => router.back()}
+          className="mr-4 p-1 rounded hover:bg-indigo-500"
+        >
+          ← Back
+        </button>
+        <span className="font-semibold">
+          Chat with {chatWithName || userId}
+        </span>
+      </div>
+
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {msgs.map((m,i) => (
+        {msgs.map((m, i) => (
           <div
             key={i}
             className={`max-w-xs p-2 rounded ${
-              m.sender === me ? 'bg-indigo-600 text-white ml-auto' : 'bg-white'
+              m.sender === me
+                ? "bg-indigo-600 text-white ml-auto"
+                : "bg-white"
             }`}
           >
             {m.message}
@@ -89,14 +109,16 @@ export default function PrivateChatPage() {
             </div>
           </div>
         ))}
-        <div ref={endRef}/>
+        <div ref={endRef} />
       </div>
+
+      {/* Input */}
       <div className="p-3 bg-white flex">
         <input
           className="flex-1 border p-2 rounded"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && send()}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && send()}
         />
         <button
           onClick={send}

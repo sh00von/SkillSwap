@@ -29,6 +29,10 @@ export default function Header() {
           <Link href="/forum" className="text-sm text-gray-600 hover:text-indigo-600">
             Forum
           </Link>
+          <Link href="/admin" className="text-sm text-gray-600 hover:text-indigo-600">
+            Admin
+          </Link>
+          
         </div>
         <div className="flex items-center space-x-6">
           <Link href="/profile" className="text-sm text-gray-600 hover:text-indigo-600">

@@ -8,6 +8,7 @@ const { protect } = require('../middleware/authMiddleware');
 // Auth routes
 router.post('/signup', authController.signup);
 router.post('/login', authController.login);
+// router.get('/:id', authController.getUserById);
 
 // Profile routes (protected)
 router.get('/profile', protect, profileController.getProfile);

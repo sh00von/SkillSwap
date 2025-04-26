@@ -42,7 +42,6 @@ export default function SkillDetailPage({
   const [skill, setSkill] = useState<Skill | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
-  const [hasPaid, setHasPaid] = useState(false)
 
   const [reviews, setReviews] = useState<Review[]>([])
   const [reviewRating, setReviewRating] = useState(5)
@@ -50,9 +49,14 @@ export default function SkillDetailPage({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [reviewError, setReviewError] = useState("")
 
+  // track swap request state
+  const [pendingSwap, setPendingSwap] = useState(false)
+  const [approvedSwap, setApprovedSwap] = useState(false)
+
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState("bKash")
+  const [slotDate, setSlotDate] = useState("")            // new: slot date input
   const [isPaying, setIsPaying] = useState(false)
   const [payError, setPayError] = useState("")
   const [paySuccess, setPaySuccess] = useState("")
@@ -63,14 +67,14 @@ export default function SkillDetailPage({
     const fetchSkillAndData = async () => {
       setIsLoading(true)
       try {
-        const skillRes = await fetch(
-          `http://localhost:5000/api/skills/${skillId}`
-        )
+        // 1. Load skill details
+        const skillRes = await fetch(`http://localhost:5000/api/skills/${skillId}`)
         if (!skillRes.ok) throw new Error("Failed to load skill details")
         const skillData: Skill = await skillRes.json()
         setSkill(skillData)
         setPaymentAmount(skillData.price)
 
+        // 2. Load reviews
         const reviewsRes = await fetch(
           `http://localhost:5000/api/skills/${skillId}/reviews`
         )
@@ -79,20 +83,25 @@ export default function SkillDetailPage({
           setReviews(reviewsData)
         }
 
+        // 3. Load swap statuses for this user & filter by this skill
         const token = getToken()
         if (token) {
-          const checkRes = await fetch(
-            `http://localhost:5000/api/payments/check/${skillId}`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            }
-          )
-          if (checkRes.ok) {
-            const check = await checkRes.json()
-            setHasPaid(check.hasPaid)
+          const swapRes = await fetch(`http://localhost:5000/api/payments/swaps`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          if (swapRes.ok) {
+            const { pending, approved }: {
+              pending: { skill: { _id: string } }[]
+              approved: { skill: { _id: string } }[]
+            } = await swapRes.json()
+
+            // check if there's a pending swap for this skill
+            setPendingSwap(pending.some(p => p.skill._id === skillId))
+            // check if there's an approved swap for this skill
+            setApprovedSwap(approved.some(a => a.skill._id === skillId))
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error(err)
         setError("Failed to load skill details. Please try again later.")
       } finally {
@@ -136,14 +145,12 @@ export default function SkillDetailPage({
       }
 
       const newReview: Review = await res.json()
-      setReviews([...reviews, newReview])
+      setReviews(prev => [...prev, newReview])
       setReviewRating(5)
       setReviewComment("")
     } catch (err: any) {
       console.error(err)
-      setReviewError(
-        err.message || "An error occurred while submitting your review"
-      )
+      setReviewError(err.message || "An error occurred while submitting your review")
     } finally {
       setIsSubmitting(false)
     }
@@ -161,32 +168,31 @@ export default function SkillDetailPage({
     }
 
     try {
-      const res = await fetch(
-        `http://localhost:5000/api/payments`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            skillId,
-            amount: paymentAmount,
-            method: paymentMethod,
-            status: "pending",
-          }),
-        }
-      )
+      const res = await fetch(`http://localhost:5000/api/payments`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          skillId,
+          amount: paymentAmount,
+          method: paymentMethod,
+          slotDate: slotDate ? new Date(slotDate).toISOString() : undefined,
+        }),
+      })
+
       const payload = await res.json()
       if (!res.ok) {
-        throw new Error(payload.message || "Payment failed")
+        throw new Error(payload.message || "Swap request failed")
       }
-      setPaySuccess("Payment successful! Your swap is confirmed.")
+
+      setPaySuccess("Swap requested! Waiting for owner approval.")
       setShowPaymentModal(false)
-      setHasPaid(true)
+      setPendingSwap(true)
     } catch (err: any) {
       console.error(err)
-      setPayError(err.message || "An error occurred during payment")
+      setPayError(err.message || "An error occurred during swap request")
     } finally {
       setIsPaying(false)
     }
@@ -231,23 +237,11 @@ export default function SkillDetailPage({
 
   return (
     <div className="bg-gray-50 min-h-screen">
-      {/* Header */}
-      <nav className="bg-white shadow p-4 flex justify-between items-center px-8">
-        <Link href="/" className="text-xl font-bold text-indigo-600">
-          SkillSwap
-        </Link>
-        <div className="flex items-center space-x-6">
-          <Link href="/profile" className="text-sm text-gray-600 hover:text-indigo-600">
-            Profile
-          </Link>
-          <Link href="/skills" className="text-sm text-gray-600 hover:text-indigo-600">
-            Browse Skills
-          </Link>
-        </div>
-      </nav>
-
       <div className="max-w-4xl mx-auto p-6">
-        <Link href="/skills" className="text-indigo-600 hover:underline flex items-center mb-4">
+        <Link
+          href="/skills"
+          className="text-indigo-600 hover:underline flex items-center mb-4"
+        >
           ← Back to Skills
         </Link>
 
@@ -255,7 +249,9 @@ export default function SkillDetailPage({
           <div className="p-6">
             <div className="flex justify-between items-start mb-4">
               <h1 className="text-2xl font-bold text-indigo-700">{skill.title}</h1>
-              <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm">{skill.category}</span>
+              <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm">
+                {skill.category}
+              </span>
             </div>
 
             <div className="flex items-center mb-4">
@@ -283,16 +279,24 @@ export default function SkillDetailPage({
               </div>
             </div>
 
-            {/* Conditional Button */}
+            {/* Swap Button & Status */}
             <div className="mt-6">
               {payError && <p className="text-red-600 mb-2">{payError}</p>}
               {paySuccess && <p className="text-green-600 mb-2">{paySuccess}</p>}
-              {hasPaid ? (
+
+              {approvedSwap ? (
                 <button
                   disabled
                   className="bg-gray-400 text-white px-4 py-2 rounded cursor-not-allowed"
                 >
                   Already Swapped
+                </button>
+              ) : pendingSwap ? (
+                <button
+                  disabled
+                  className="bg-yellow-500 text-white px-4 py-2 rounded cursor-not-allowed"
+                >
+                  Swap Pending
                 </button>
               ) : (
                 <button
@@ -304,11 +308,12 @@ export default function SkillDetailPage({
               )}
             </div>
 
-            {/* Payment Modal */}
+            {/* —— Payment Modal —— */}
             {showPaymentModal && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white p-6 rounded-lg w-80">
-                  <h2 className="text-lg font-semibold mb-4">Confirm Payment</h2>
+                  <h2 className="text-lg font-semibold mb-4">Request Swap & Slot</h2>
+
                   <div className="mb-3">
                     <label className="block text-sm font-medium mb-1">Amount (₹)</label>
                     <input
@@ -319,7 +324,8 @@ export default function SkillDetailPage({
                       onChange={(e) => setPaymentAmount(Number(e.target.value))}
                     />
                   </div>
-                  <div className="mb-4">
+
+                  <div className="mb-3">
                     <label className="block text-sm font-medium mb-1">Method</label>
                     <select
                       className="w-full p-2 border rounded"
@@ -331,6 +337,19 @@ export default function SkillDetailPage({
                       <option value="Card">Card</option>
                     </select>
                   </div>
+
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium mb-1">
+                      Select Slot Date & Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      className="w-full p-2 border rounded"
+                      value={slotDate}
+                      onChange={(e) => setSlotDate(e.target.value)}
+                    />
+                  </div>
+
                   <div className="flex justify-end space-x-2">
                     <button
                       onClick={() => setShowPaymentModal(false)}
@@ -344,16 +363,17 @@ export default function SkillDetailPage({
                       disabled={isPaying}
                       className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50"
                     >
-                      {isPaying ? "Processing…" : "Pay Now"}
+                      {isPaying ? "Requesting…" : "Request Swap"}
                     </button>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Reviews */}
+            {/* Reviews Section */}
             <div className="border-t pt-6 mt-6">
               <h2 className="text-xl font-semibold mb-4">Reviews</h2>
+
               {/* Add Review Form */}
               <div className="bg-gray-50 p-4 rounded-lg mb-6">
                 <h3 className="text-lg font-medium mb-3">Add Your Review</h3>
@@ -364,7 +384,9 @@ export default function SkillDetailPage({
                 )}
                 <form onSubmit={handleSubmitReview}>
                   <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Rating</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Rating
+                    </label>
                     <div className="flex items-center">
                       {[1, 2, 3, 4, 5].map((star) => (
                         <button
@@ -381,7 +403,9 @@ export default function SkillDetailPage({
                     </div>
                   </div>
                   <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Comment
+                    </label>
                     <textarea
                       value={reviewComment}
                       onChange={(e) => setReviewComment(e.target.value)}
@@ -389,7 +413,7 @@ export default function SkillDetailPage({
                       rows={3}
                       className="w-full p-2 border rounded"
                       placeholder="Share your experience..."
-                    ></textarea>
+                    />
                   </div>
                   <button
                     type="submit"
@@ -411,13 +435,17 @@ export default function SkillDetailPage({
                       <div className="flex justify-between items-start">
                         <div>
                           <div className="flex items-center">
-                            <span className="font-medium">{review.user?.username || "Anonymous"}</span>
+                            <span className="font-medium">
+                              {review.user?.username || "Anonymous"}
+                            </span>
                             <span className="mx-2 text-gray-300">•</span>
                             <div className="flex">
                               {[...Array(5)].map((_, i) => (
                                 <span
                                   key={i}
-                                  className={`text-sm ${i < review.rating ? "text-yellow-500" : "text-gray-300"}`}
+                                  className={`text-sm ${
+                                    i < review.rating ? "text-yellow-500" : "text-gray-300"
+                                  }`}
                                 >
                                   ★
                                 </span>
@@ -426,7 +454,9 @@ export default function SkillDetailPage({
                           </div>
                           <p className="text-gray-700 mt-1">{review.comment}</p>
                         </div>
-                        <span className="text-xs text-gray-500">{formatDate(review.createdAt)}</span>
+                        <span className="text-xs text-gray-500">
+                          {formatDate(review.createdAt)}
+                        </span>
                       </div>
                     </div>
                   ))}

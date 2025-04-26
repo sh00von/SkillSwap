@@ -5,6 +5,16 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { getToken } from "@/lib/auth"
 import { Head } from "react-day-picker"
+interface Swap {
+  _id: string
+  user: { _id: string; username: string }
+  skill: { _id: string; title: string }
+  amount: number
+  method: string
+  status: "pending" | "swapped" | "failed"
+  slotDate?: string
+  createdAt: string
+}
 
 interface UserProfile {
   _id: string
@@ -65,6 +75,11 @@ export default function Profile() {
   const [previewSrc, setPreviewSrc] = useState<string>("")
   const [uploading, setUploading] = useState(false)
   const [locationName, setLocationName] = useState<string>("")
+  // NEW state for swap requests
+  const [pendingSwaps, setPendingSwaps]   = useState<Swap[]>([])
+  const [approvedSwaps, setApprovedSwaps] = useState<Swap[]>([])
+  const [loadingSwaps, setLoadingSwaps]   = useState(true)
+  const [swapError, setSwapError]         = useState("")
 
   const router = useRouter()
 
@@ -106,6 +121,63 @@ export default function Profile() {
 
     fetchUserProfile()
   }, [router])
+  // NEW: fetch swap requests for *your* offered skills
+  useEffect(() => {
+    const token = getToken()
+    if (!token) return
+
+    const fetchSwaps = async () => {
+      setLoadingSwaps(true)
+      try {
+        const res = await fetch("http://localhost:5000/api/payments/swaps", {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) throw new Error("Failed to load swap requests")
+        const { pending, approved } = await res.json()
+        setPendingSwaps(pending)
+        setApprovedSwaps(approved)
+      } catch (err: any) {
+        console.error(err)
+        setSwapError(err.message || "Could not fetch swaps")
+      } finally {
+        setLoadingSwaps(false)
+      }
+    }
+
+    fetchSwaps()
+  }, [])
+
+  // Approve a pending swap
+  const handleApprove = async (swap: Swap) => {
+    const token = getToken()
+    if (!token) return router.push("/login")
+
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/payments/${swap._id}/confirm`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          // we pass along the original slotDate so it isn’t lost
+          body: JSON.stringify({ slotDate: swap.slotDate }),
+        }
+      )
+      if (!res.ok) {
+        const body = await res.json()
+        throw new Error(body.message || "Approve failed")
+      }
+      const updated: Swap = await res.json()
+
+      // move from pending → approved
+      setPendingSwaps(ps => ps.filter(s => s._id !== swap._id))
+      setApprovedSwaps(as => [updated, ...as])
+    } catch (err: any) {
+      alert(err.message || "Error approving swap")
+    }
+  }
 
   const handleLogout = () => {
     localStorage.removeItem("token")
@@ -356,6 +428,107 @@ export default function Profile() {
                   {uploading ? "Uploading..." : "Upload & Verify"}
                 </button>
               </div>
+            )}
+          </div>         {/*** NEW Swap Requests Section ***/}
+          <div className="pt-4 border-t mt-6">
+            <h2 className="text-xl font-semibold mb-4">Swap Requests</h2>
+
+            {loadingSwaps ? (
+              <p className="text-gray-600">Loading swaps…</p>
+            ) : swapError ? (
+              <p className="text-red-600">{swapError}</p>
+            ) : (
+              <>
+                {/* Pending */}
+     {/* Pending */}
+{/* Pending */}
+{pendingSwaps.length > 0 && (
+  <div className="mb-6">
+    <h3 className="text-lg font-medium mb-2">Pending</h3>
+    <div className="space-y-4">
+      {pendingSwaps.map(swap => (
+        <div
+          key={swap._id}
+          className="p-4 border rounded-lg flex justify-between items-center"
+        >
+          <div>
+            <p>
+              <span className="font-medium">{swap.user.username}</span>{" "}
+              wants a swap on{" "}
+              <span className="font-medium">{swap.skill.title}</span>
+            </p>
+            <p className="text-sm text-gray-500">
+              ₹{swap.amount} via {swap.method}
+            </p>
+
+            {/* Show only the slot date */}
+            <p className="text-sm text-gray-500">
+              Slot Date:{" "}
+              {swap.slotDate
+                ? new Date(swap.slotDate).toLocaleString("en-US", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : "Not set"}
+            </p>
+          </div>
+          <button
+            onClick={() => handleApprove(swap)}
+            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+          >
+            Approve
+          </button>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
+
+                {/* Approved */}
+                {approvedSwaps.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-medium mb-2">Approved</h3>
+                    <div className="space-y-4">
+                      {approvedSwaps.map(swap => (
+                        <div
+                          key={swap._id}
+                          className="p-4 border rounded-lg flex justify-between items-center bg-green-50"
+                        >
+                          <div>
+                            <p>
+                              <span className="font-medium">
+                                {swap.user.username}
+                              </span>{" "}
+                              swap approved for{" "}
+                              <span className="font-medium">
+                                {swap.skill.title}
+                              </span>
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              ₹{swap.amount} —{" "}
+                              {swap.slotDate
+                                ? new Date(swap.slotDate).toLocaleString()
+                                : "No slot set"}
+                            </p>
+                          </div>
+                          <span className="text-sm text-green-700 font-medium">
+                            ✅
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* None */}
+                {pendingSwaps.length === 0 && approvedSwaps.length === 0 && (
+                  <p className="text-gray-600">No swap requests yet.</p>
+                )}
+              </>
             )}
           </div>
 

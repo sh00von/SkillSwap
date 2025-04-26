@@ -12,6 +12,7 @@ const reviewRoutes  = require('./routes/reviewRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const forumRoutes   = require('./routes/forumRoutes');
 const messageRoutes = require('./routes/messageRoutes');  // now has GET /private/:user1/:user2 and POST /private
+const notificationRoutes = require('./routes/notificationRoutes'); // new route for notifications
 
 const app = express();
 
@@ -33,7 +34,7 @@ app.use('/api/skills',  skillRoutes);
 app.use('/api/skills/:skillId/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/forum',   forumRoutes);
-
+app.use('/api/notifications', notificationRoutes); // mount notification routes
 // mount message routes for polling
 // GET  /api/messages/private/:user1/:user2  → fetch conversation history
 // POST /api/messages/private                → send a new message

@@ -1,5 +1,6 @@
 // controllers/skillController.js
 const Skill = require('../models/Skill');
+const Notification = require('../models/Notification');
 
 // GET /api/skills
 exports.getSkills = async (req, res) => {
@@ -51,26 +52,39 @@ exports.getSkillById = async (req, res) => {
     res.status(500).json({ message: 'Error fetching skill', error: error.message });
   }
 };
-
 // POST /api/skills
 exports.createSkill = async (req, res) => {
   try {
     const { title, description, category, experience, price, location } = req.body;
     const offeredBy = req.user?.userId || null;
 
+    // 1. Create & save the new skill
     const newSkill = new Skill({
       title,
       description,
       category,
       experience,
-      price,        // make sure price is being saved
+      price,
       location,
       offeredBy
     });
-
     const saved = await newSkill.save();
+
+    // 2. Send a system notification to the creator
+    if (offeredBy) {
+      await Notification.create({
+        recipient: offeredBy,
+        type:      'system',
+        message:   `Your skill "${saved.title}" is now live!`,
+        data:      { skillId: saved._id }
+      });
+    }
+
+    // 3. Return the saved skill
     res.status(201).json(saved);
+
   } catch (err) {
+    console.error('❌ createSkill error:', err);
     res.status(500).json({ message: 'Error creating skill', error: err.message });
   }
 };

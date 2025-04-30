@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 
@@ -11,17 +10,50 @@ export default function Signup() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [studentId, setStudentId] = useState("")
+  const [phone, setPhone] = useState("")
+  const [dob, setDob] = useState("")
+  const [bio, setBio] = useState("")
+  const [acceptLocation, setAcceptLocation] = useState(false)
+  const [latitude, setLatitude] = useState<number | null>(null)
+  const [longitude, setLongitude] = useState<number | null>(null)
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+
+  // When user accepts, attempt to get geolocation
+  useEffect(() => {
+    if (!acceptLocation) return
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by your browser")
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLatitude(pos.coords.latitude)
+        setLongitude(pos.coords.longitude)
+      },
+      (err) => {
+        setError("Unable to retrieve location")
+        setAcceptLocation(false)
+      }
+    )
+  }, [acceptLocation])
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
 
-    // Validate passwords match
     if (password !== confirmPassword) {
       setError("Passwords do not match")
+      return
+    }
+    if (!acceptLocation) {
+      setError("You must allow location access")
+      return
+    }
+    if (latitude === null || longitude === null) {
+      setError("Waiting for location…")
       return
     }
 
@@ -31,13 +63,22 @@ export default function Signup() {
       const res = await fetch("http://localhost:5000/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, email, password }),
+        body: JSON.stringify({
+          username,
+          email,
+          password,
+          studentId,
+          phone,
+          dob,
+          bio,
+          latitude,
+          longitude,
+        }),
       })
 
       const data = await res.json()
 
       if (res.ok) {
-        // Redirect to login page after successful signup
         router.push("/login?registered=true")
       } else {
         setError(data.message || "Registration failed. Please try again.")
@@ -75,6 +116,46 @@ export default function Signup() {
             required
             className="w-full p-2 border rounded"
           />
+          <input
+            type="text"
+            placeholder="Student ID"
+            value={studentId}
+            onChange={(e) => setStudentId(e.target.value)}
+            className="w-full p-2 border rounded"
+          />
+          <input
+            type="tel"
+            placeholder="Phone"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className="w-full p-2 border rounded"
+          />
+          <input
+            type="date"
+            placeholder="Date of Birth"
+            value={dob}
+            onChange={(e) => setDob(e.target.value)}
+            className="w-full p-2 border rounded"
+          />
+          <textarea
+            placeholder="Bio (optional)"
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            className="w-full p-2 border rounded"
+            rows={3}
+          />
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="acceptLocation"
+              checked={acceptLocation}
+              onChange={(e) => setAcceptLocation(e.target.checked)}
+              className="h-4 w-4"
+            />
+            <label htmlFor="acceptLocation" className="text-sm">
+              I allow Geo-location (latitude & longitude)
+            </label>
+          </div>
           <input
             type="password"
             placeholder="Password"

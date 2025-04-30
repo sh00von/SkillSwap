@@ -1,13 +1,20 @@
 // routes/paymentRoutes.js
-const router       = require('express').Router();
-const { protect }  = require('../middleware/authMiddleware');
-const { createPayment, getPayments,checkPaymentStatus,confirmSlot,listSwaps  } = require('../controllers/paymentController');
+const express       = require('express')
+const router        = express.Router()
+const { protect }   = require('../middleware/authMiddleware')
+const paymentCtrl   = require('../controllers/paymentController')
 
-// now each of these routes will run protect() first
-router.post('/', protect, createPayment);
-router.get('/',  protect, getPayments);
-router.get("/check/:skillId", protect, checkPaymentStatus); // ✅ new route
-router.put('/:paymentId/confirm', protect, confirmSlot); // ✅ new route
-router.get('/swaps', protect, listSwaps); // ✅ new route
+// Protected user endpoints
+router.post(   '/initiate',           protect, paymentCtrl.initiatePayment)
+router.put(    '/:paymentId/confirm', protect, paymentCtrl.confirmSlot)
+router.get(    '/',                   protect, paymentCtrl.getPayments)
+router.get(    '/check/:skillId',     protect, paymentCtrl.checkPaymentStatus)
+router.get(    '/swaps',              protect, paymentCtrl.listSwaps)
 
-module.exports = router;
+// Public SSLCommerz callback endpoints
+router.post(  '/success', paymentCtrl.success)
+router.get(  '/fail',    paymentCtrl.fail)
+router.get(  '/cancel',  paymentCtrl.cancel)
+router.post( '/ipn',     paymentCtrl.ipn)
+
+module.exports = router

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { getToken } from "@/lib/auth"
-import { Head } from "react-day-picker"
+
 interface Swap {
   _id: string
   user: { _id: string; username: string }
@@ -20,12 +20,15 @@ interface UserProfile {
   _id: string
   username: string
   email: string
+  studentId?: string
+  bio?: string
+  phone?: string
+  dob?: string
   idCardUrl?: string
-  isVerified?: boolean
   idCardExpiresAt?: string
-  createdAt?: string
-  updatedAt?: string
+  verificationStatus: "unverified" | "pending" | "approved" | "rejected"
   ip?: string
+  createdAt?: string
 }
 
 interface Skill {
@@ -35,10 +38,7 @@ interface Skill {
   category: string
   experience: string
   location: string
-  offeredBy: string
   createdAt: string
-  updatedAt: string
-  id: string
 }
 
 interface Task {
@@ -46,17 +46,12 @@ interface Task {
   type: string
   status: string
   pointsAwarded: number
-  skill: {
-    _id: string
-    title: string
-    price: number
-  }
+  skill: { title: string }
   createdAt: string
 }
 
 interface Milestone {
   _id: string
-  type: string
   targetCount: number
   isCompleted: boolean
   pointsAwarded: number
@@ -64,70 +59,58 @@ interface Milestone {
 }
 
 export default function Profile() {
+  const router = useRouter()
   const [user, setUser] = useState<UserProfile | null>(null)
   const [skills, setSkills] = useState<Skill[]>([])
-  const [totalPoints, setTotalPoints] = useState<number>(0)
+  const [totalPoints, setTotalPoints] = useState(0)
   const [tasks, setTasks] = useState<Task[]>([])
   const [milestones, setMilestones] = useState<Milestone[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState("")
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [previewSrc, setPreviewSrc] = useState<string>("")
-  const [uploading, setUploading] = useState(false)
-  const [locationName, setLocationName] = useState<string>("")
-  // NEW state for swap requests
-  const [pendingSwaps, setPendingSwaps]   = useState<Swap[]>([])
+  const [pendingSwaps, setPendingSwaps] = useState<Swap[]>([])
   const [approvedSwaps, setApprovedSwaps] = useState<Swap[]>([])
-  const [loadingSwaps, setLoadingSwaps]   = useState(true)
-  const [swapError, setSwapError]         = useState("")
+  const [locationName, setLocationName] = useState("Unknown")
+  const [loading, setLoading] = useState(true)
+  const [swapLoading, setSwapLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [swapError, setSwapError] = useState("")
+  const [uploading, setUploading] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [previewSrc, setPreviewSrc] = useState("")
 
-  const router = useRouter()
-
+  // Fetch profile, skills, points, tasks, milestones
   useEffect(() => {
     const token = getToken()
-    if (!token) {
-      router.push("/login")
-      return
-    }
+    if (!token) return router.push("/login")
 
-    const fetchUserProfile = async () => {
+    ;(async () => {
       try {
         const res = await fetch("http://localhost:5000/api/auth/profile", {
           headers: { Authorization: `Bearer ${token}` },
         })
-        if (!res.ok) {
-          localStorage.removeItem("token")
-          router.push("/login")
-          return
-        }
-
+        if (!res.ok) throw new Error("Unauthorized")
         const data = await res.json()
         setUser(data.user)
-        if (Array.isArray(data.skills)) setSkills(data.skills)
-        if (typeof data.totalPoints === "number") setTotalPoints(data.totalPoints)
-        if (Array.isArray(data.tasks)) setTasks(data.tasks)
-        if (Array.isArray(data.milestones)) setMilestones(data.milestones)
-
+        setSkills(data.skills || [])
+        setTotalPoints(data.totalPoints || 0)
+        setTasks(data.tasks || [])
+        setMilestones(data.milestones || [])
         if (data.user.ip) {
           const city = await getLocation(data.user.ip)
           setLocationName(city)
         }
       } catch {
-        setError("Failed to load profile. Please try again later.")
+        setError("Failed to load profile")
       } finally {
-        setIsLoading(false)
+        setLoading(false)
       }
-    }
-
-    fetchUserProfile()
+    })()
   }, [router])
-  // NEW: fetch swap requests for *your* offered skills
+
+  // Fetch swaps
   useEffect(() => {
     const token = getToken()
     if (!token) return
-
-    const fetchSwaps = async () => {
-      setLoadingSwaps(true)
+    ;(async () => {
+      setSwapLoading(true)
       try {
         const res = await fetch("http://localhost:5000/api/payments/swaps", {
           headers: { Authorization: `Bearer ${token}` },
@@ -136,22 +119,17 @@ export default function Profile() {
         const { pending, approved } = await res.json()
         setPendingSwaps(pending)
         setApprovedSwaps(approved)
-      } catch (err: any) {
-        console.error(err)
-        setSwapError(err.message || "Could not fetch swaps")
+      } catch (e: any) {
+        setSwapError(e.message)
       } finally {
-        setLoadingSwaps(false)
+        setSwapLoading(false)
       }
-    }
-
-    fetchSwaps()
+    })()
   }, [])
 
-  // Approve a pending swap
   const handleApprove = async (swap: Swap) => {
     const token = getToken()
     if (!token) return router.push("/login")
-
     try {
       const res = await fetch(
         `http://localhost:5000/api/payments/${swap._id}/confirm`,
@@ -161,21 +139,15 @@ export default function Profile() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          // we pass along the original slotDate so it isn’t lost
           body: JSON.stringify({ slotDate: swap.slotDate }),
         }
       )
-      if (!res.ok) {
-        const body = await res.json()
-        throw new Error(body.message || "Approve failed")
-      }
+      if (!res.ok) throw new Error("Approve failed")
       const updated: Swap = await res.json()
-
-      // move from pending → approved
       setPendingSwaps(ps => ps.filter(s => s._id !== swap._id))
       setApprovedSwaps(as => [updated, ...as])
-    } catch (err: any) {
-      alert(err.message || "Error approving swap")
+    } catch (e: any) {
+      alert(e.message)
     }
   }
 
@@ -191,8 +163,6 @@ export default function Profile() {
       const reader = new FileReader()
       reader.onload = () => setPreviewSrc(reader.result as string)
       reader.readAsDataURL(file)
-    } else {
-      setPreviewSrc("")
     }
   }
 
@@ -200,20 +170,20 @@ export default function Profile() {
     if (!selectedFile || !user) return
     setUploading(true)
     setError("")
-
+  
     try {
-      // Upload to imgbb
+      // 1) Upload file to your proxy endpoint
       const form = new FormData()
-      form.append("key", process.env.NEXT_PUBLIC_IMGBB_KEY!)
       form.append("image", selectedFile)
-      const imgbbRes = await fetch("https://api.imgbb.com/1/upload", {
+  
+      const uploadRes = await fetch("/api/upload-id", {
         method: "POST",
         body: form,
       })
-      const imgbbJson = await imgbbRes.json()
-      if (!imgbbRes.ok || !imgbbJson.data?.url) throw new Error("Upload failed")
-      const imageUrl = imgbbJson.data.url
-
+      if (!uploadRes.ok) throw new Error("Image upload failed")
+      const { url } = await uploadRes.json()
+  
+      // 2) Send the resulting URL to your backend for verification
       const token = getToken()
       const verifyRes = await fetch("http://localhost:5000/api/auth/verify-profile", {
         method: "POST",
@@ -221,51 +191,46 @@ export default function Profile() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          imageUrl,
-        }),
+        body: JSON.stringify({ imageUrl: url }),
       })
       if (!verifyRes.ok) {
         const err = await verifyRes.json()
         throw new Error(err.message || "Verification failed")
       }
-      const { user: updatedUser } = await verifyRes.json()
-      setUser(updatedUser)
-      setSelectedFile(null)
+  
+      // 3) Update local state
+      const { user: updated } = await verifyRes.json()
+      setUser(updated)
       setPreviewSrc("")
-    } catch (err: any) {
-      console.error(err)
-      setError(err.message)
+    } catch (e: any) {
+      setError(e.message)
     } finally {
       setUploading(false)
     }
   }
+  
 
   const handleRemove = async () => {
     if (!user) return
     setUploading(true)
-    setError("")
     try {
       const token = getToken()
       const res = await fetch("http://localhost:5000/api/auth/verify-profile", {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (!res.ok) throw new Error("Could not remove verification")
-      const { user: updatedUser } = await res.json()
-      setUser(updatedUser)
-    } catch (err: any) {
-      console.error(err)
-      setError(err.message)
+      const { user: updated } = await res.json()
+      setUser(updated)
+    } catch (e: any) {
+      setError(e.message)
     } finally {
       setUploading(false)
     }
   }
 
-  const getLocation = async (ip: string): Promise<string> => {
+  const getLocation = async (ip: string) => {
     try {
       const res = await fetch(`https://ipapi.co/${ip}/json/`)
-      if (!res.ok) throw new Error("Failed to fetch location")
       const data = await res.json()
       return data.city || "Unknown"
     } catch {
@@ -273,307 +238,361 @@ export default function Profile() {
     }
   }
 
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="mt-4 text-gray-600">Loading your profile...</p>
-        </div>
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin h-12 w-12 border-4 border-indigo-600 border-t-transparent rounded-full" />
       </div>
     )
   }
 
-  const swapCount = tasks.filter(t => t.type === "swap" && t.status === "completed").length
-
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <div className="bg-gray-100 min-h-screen py-8">
+      <div className="max-w-5xl mx-auto space-y-8">
+        {error && (
+          <div className="p-4 bg-red-100 text-red-700 rounded">{error}</div>
+        )}
 
-      <div className="max-w-4xl mx-auto p-6">
-        {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">{error}</div>}
-
-        <div className="bg-white rounded-lg shadow-md p-8">
-          <h1 className="text-2xl font-bold mb-6">Your Profile</h1>
-
-          {/* Basic Info */}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-600">Username</label>
-              <p className="mt-1 text-lg">{user?.username}</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-600">Email</label>
-              <p className="mt-1 text-lg">{user?.email}</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-600">Location</label>
-              <p className="mt-1 text-lg">{locationName || "Unknown"}</p>
+        {/* Profile Card */}
+        <div className="bg-white p-6 rounded-lg shadow flex flex-col md:flex-row items-center">
+          <div className="flex-1">
+            <h2 className="text-2xl font-bold">{user?.username}</h2>
+            {user?.bio && <p className="mt-2 text-gray-600">{user.bio}</p>}
+            <div className="mt-4 space-y-1 text-gray-700">
+              {user?.studentId && (
+                <div>
+                  <span className="font-medium">Student ID:</span>{" "}
+                  {user.studentId}
+                </div>
+              )}
+              {user?.email && (
+                <div>
+                  <span className="font-medium">Email:</span> {user.email}
+                </div>
+              )}
+              {user?.phone && (
+                <div>
+                  <span className="font-medium">Phone:</span> {user.phone}
+                </div>
+              )}
+              {user?.dob && (
+                <div>
+                  <span className="font-medium">DOB:</span>{" "}
+                  {new Date(user.dob).toLocaleDateString()}
+                </div>
+              )}
+              <div>
+                <span className="font-medium">Location:</span> {locationName}
+              </div>
             </div>
           </div>
-          <span className="text-xs text-gray-500 mt-1">
-            <a href="/profile/edit" className="text-indigo-600 hover:underline">
+
+          <div className="mt-6 md:mt-0 md:ml-6 flex-shrink-0 space-y-2">
+            <Link
+              href="/profile/edit"
+              className="block px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-center"
+            >
               Edit Profile
-            </a>
-          </span>
-
-          {/* Points */}
-          <div className="pt-4 border-t mt-6">
-            <h2 className="text-xl font-semibold mb-2">Your Points</h2>
-            <p className="text-3xl font-bold text-indigo-600">{totalPoints}</p>
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="block px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 w-full"
+            >
+              Log Out
+            </button>
           </div>
-
-          {/* Tasks */}
-          <div className="pt-4 border-t mt-6">
-            <h2 className="text-xl font-semibold mb-4">Your Tasks</h2>
-            {tasks.length > 0 ? (
-              <div className="space-y-3">
-                {tasks.map(task => (
-                  <div key={task._id} className="p-4 border rounded-lg flex justify-between items-center">
-                    <div>
-                      <p className="font-medium">
-                        {task.type.toUpperCase()} — <span className="text-gray-600">{task.status}</span>
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Skill: {task.skill.title} ({task.pointsAwarded} pts)
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {new Date(task.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-600">No tasks to show.</p>
-            )}
-          </div>
-
-          {/* Milestones */}
-          <div className="pt-4 border-t mt-6">
-            <h2 className="text-xl font-semibold mb-4">Your Milestones</h2>
-            {milestones.length > 0 ? (
-              <div className="space-y-6">
-                {milestones.map(ms => {
-                  const progress = Math.min(swapCount / ms.targetCount, 1)
-                  const percent = Math.round(progress * 100)
-                  return (
-                    <div key={ms._id}>
-                      <div className="flex justify-between mb-1">
-                        <span className="text-gray-700 font-medium">
-                          Swap Milestone: {swapCount}/{ms.targetCount}
-                        </span>
-                        <span className="text-sm font-medium text-gray-600">{percent}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-3">
-                        <div
-                          className="bg-indigo-600 h-3 rounded-full"
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-                      {ms.isCompleted && ms.completedAt && (
-                        <p className="text-sm text-green-600 mt-1">
-                          Completed on {new Date(ms.completedAt).toLocaleDateString()} — +{ms.pointsAwarded} bonus pts
-                        </p>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="text-gray-600">No milestones yet.</p>
-            )}
-          </div>
-
-          {/* Verification Section */}
-          <div className="pt-4 border-t mt-6">
-            <h2 className="text-xl font-semibold mb-2">Verify Your Profile</h2>
-            {user?.isVerified ? (
-              <div className="flex flex-col items-start space-y-4">
-                <span className="text-green-600 font-medium">Verified</span>
-                {user.idCardUrl && (
-                  <img
-                    src={user.idCardUrl}
-                    alt="ID Card"
-                    className="w-48 h-48 object-cover rounded border"
-                  />
-                )}
-                {user.idCardExpiresAt && (
-                  <p className="text-sm text-gray-500">
-                    Expires on {new Date(user.idCardExpiresAt).toLocaleString()}
-                  </p>
-                )}
-                <button
-                  onClick={handleRemove}
-                  disabled={uploading}
-                  className="text-red-600 hover:underline disabled:opacity-50 text-sm"
-                >
-                  {uploading ? "Removing..." : "Remove Verification"}
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <input type="file" accept="image/*" onChange={handleFileChange} />
-                {previewSrc && (
-                  <img
-                    src={previewSrc}
-                    alt="Preview"
-                    className="w-48 h-48 object-cover rounded border"
-                  />
-                )}
-                <button
-                  onClick={handleVerify}
-                  disabled={uploading}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  {uploading ? "Uploading..." : "Upload & Verify"}
-                </button>
-              </div>
-            )}
-          </div>         {/*** NEW Swap Requests Section ***/}
-          <div className="pt-4 border-t mt-6">
-            <h2 className="text-xl font-semibold mb-4">Swap Requests</h2>
-
-            {loadingSwaps ? (
-              <p className="text-gray-600">Loading swaps…</p>
-            ) : swapError ? (
-              <p className="text-red-600">{swapError}</p>
-            ) : (
-              <>
-                {/* Pending */}
-     {/* Pending */}
-{/* Pending */}
-{pendingSwaps.length > 0 && (
-  <div className="mb-6">
-    <h3 className="text-lg font-medium mb-2">Pending</h3>
-    <div className="space-y-4">
-      {pendingSwaps.map(swap => (
-        <div
-          key={swap._id}
-          className="p-4 border rounded-lg flex justify-between items-center"
-        >
-          <div>
-            <p>
-              <span className="font-medium">{swap.user.username}</span>{" "}
-              wants a swap on{" "}
-              <span className="font-medium">{swap.skill.title}</span>
-            </p>
-            <p className="text-sm text-gray-500">
-              ₹{swap.amount} via {swap.method}
-            </p>
-
-            {/* Show only the slot date */}
-            <p className="text-sm text-gray-500">
-              Slot Date:{" "}
-              {swap.slotDate
-                ? new Date(swap.slotDate).toLocaleString("en-US", {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                : "Not set"}
-            </p>
-          </div>
-          <button
-            onClick={() => handleApprove(swap)}
-            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-          >
-            Approve
-          </button>
         </div>
-      ))}
-    </div>
-  </div>
-)}
 
-
-                {/* Approved */}
-                {approvedSwaps.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-medium mb-2">Approved</h3>
-                    <div className="space-y-4">
-                      {approvedSwaps.map(swap => (
-                        <div
-                          key={swap._id}
-                          className="p-4 border rounded-lg flex justify-between items-center bg-green-50"
-                        >
-                          <div>
-                            <p>
-                              <span className="font-medium">
-                                {swap.user.username}
-                              </span>{" "}
-                              swap approved for{" "}
-                              <span className="font-medium">
-                                {swap.skill.title}
-                              </span>
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              ₹{swap.amount} —{" "}
-                              {swap.slotDate
-                                ? new Date(swap.slotDate).toLocaleString()
-                                : "No slot set"}
-                            </p>
-                          </div>
-                          <span className="text-sm text-green-700 font-medium">
-                            ✅
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* None */}
-                {pendingSwaps.length === 0 && approvedSwaps.length === 0 && (
-                  <p className="text-gray-600">No swap requests yet.</p>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Skills Section */}
-          <div className="pt-4 border-t mt-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Your Skills</h2>
-              <Link
-                href="/skills/new"
-                className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm"
-              >
-                Add New Skill
-              </Link>
+        {/* Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white p-4 rounded-md shadow text-center">
+            <div className="text-sm text-gray-500">Points</div>
+            <div className="text-3xl font-bold text-indigo-600">
+              {totalPoints}
             </div>
-            {skills.length > 0 ? (
-              <div className="grid grid-cols-1 gap-4">
-                {skills.map(skill => (
-                  <Link
-                    key={skill._id}
-                    href={`/skills/${skill._id}`}
-                    className="block p-4 border rounded-lg hover:border-indigo-300 hover:bg-indigo-50"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-medium text-indigo-700">{skill.title}</h3>
-                        <p className="text-sm text-gray-600 mt-1 line-clamp-1">
-                          {skill.description}
-                        </p>
-                      </div>
-                      <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded">
-                        {skill.category}
-                      </span>
-                    </div>
-                    <div className="flex justify-between mt-2 text-xs text-gray-500">
-                      <span>Experience: {skill.experience}</span>
-                      <span>Location: {skill.location}</span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-600">You haven't added any skills yet.</p>
-            )}
+          </div>
+          <div className="bg-white p-4 rounded-md shadow text-center">
+            <div className="text-sm text-gray-500">Tasks</div>
+            <div className="text-3xl font-bold text-indigo-600">
+              {tasks.length}
+            </div>
+          </div>
+          <div className="bg-white p-4 rounded-md shadow text-center">
+            <div className="text-sm text-gray-500">Skills</div>
+            <div className="text-3xl font-bold text-indigo-600">
+              {skills.length}
+            </div>
           </div>
         </div>
+
+        {/* Swap Requests */}
+        <section className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-xl font-semibold mb-4">Swap Requests</h3>
+          {swapLoading ? (
+            <p className="text-gray-500">Loading…</p>
+          ) : swapError ? (
+            <p className="text-red-600">{swapError}</p>
+          ) : (
+            <>
+              {pendingSwaps.length > 0 && (
+                <div className="mb-6">
+                  <h4 className="font-medium mb-2">Pending</h4>
+                  <div className="space-y-4">
+                    {pendingSwaps.map(s => (
+                      <div
+                        key={s._id}
+                        className="p-4 border rounded-md flex justify-between items-center"
+                      >
+                        <div>
+                          <p>
+                            <strong>{s.user.username}</strong> wants{" "}
+                            <strong>{s.skill.title}</strong>
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            ₹{s.amount} via {s.method} —{" "}
+                            {s.slotDate
+                              ? new Date(s.slotDate).toLocaleString()
+                              : "No slot"}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleApprove(s)}
+                          className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                        >
+                          Approve
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {approvedSwaps.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2">Approved</h4>
+                  <div className="space-y-4">
+                    {approvedSwaps.map(s => (
+                      <div
+                        key={s._id}
+                        className="p-4 border rounded-md bg-green-50 flex justify-between items-center"
+                      >
+                        <div>
+                          <p>
+                            Swap approved for{" "}
+                            <strong>{s.skill.title}</strong>
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            ₹{s.amount} —{" "}
+                            {s.slotDate
+                              ? new Date(s.slotDate).toLocaleString()
+                              : "No slot"}
+                          </p>
+                        </div>
+                        <span className="text-green-700 font-bold">&#10003;</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {pendingSwaps.length === 0 &&
+                approvedSwaps.length === 0 && (
+                  <p className="text-gray-500">No swap requests yet.</p>
+                )}
+            </>
+          )}
+        </section>
+
+        {/* Tasks */}
+        <section className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-xl font-semibold mb-4">Your Tasks</h3>
+          {tasks.length ? (
+            <div className="space-y-4">
+              {tasks.map(t => (
+                <div
+                  key={t._id}
+                  className="p-4 border rounded-md flex justify-between items-center"
+                >
+                  <div>
+                    <p className="font-medium">
+                      {t.type.toUpperCase()} — {t.status}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      {t.skill.title} (+{t.pointsAwarded} pts)
+                    </p>
+                  </div>
+                  <span className="text-gray-400 text-sm">
+                    {new Date(t.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500">No tasks yet.</p>
+          )}
+        </section>
+
+        {/* Milestones */}
+        <section className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-xl font-semibold mb-4">Milestones</h3>
+          {milestones.length ? (
+            <div className="space-y-6">
+              {milestones.map(ms => {
+                const completedSwaps = tasks.filter(
+                  t => t.type === "swap" && t.status === "completed"
+                ).length
+                const pct = Math.min(
+                  (completedSwaps / ms.targetCount) * 100,
+                  100
+                )
+                return (
+                  <div key={ms._id}>
+                    <div className="flex justify-between mb-1">
+                      <span>
+                        Swap Milestone {completedSwaps}/
+                        {ms.targetCount}
+                      </span>
+                      <span className="text-sm">{Math.round(pct)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-indigo-600 h-2 rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    {ms.isCompleted && ms.completedAt && (
+                      <p className="text-green-600 text-sm mt-1">
+                        Completed on{" "}
+                        {new Date(ms.completedAt).toLocaleDateString()} — +
+                        {ms.pointsAwarded} pts
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-gray-500">No milestones yet.</p>
+          )}
+        </section>
+
+        {/* Verification */}
+        <section className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-xl font-semibold mb-4">ID Verification</h3>
+
+          {user?.verificationStatus === "pending" ? (
+            <div className="space-y-2">
+              <span className="text-yellow-600 font-medium">
+                Verification pending admin approval…
+              </span>
+              {user.idCardUrl && (
+                <img
+                  src={user.idCardUrl}
+                  alt="Uploaded ID"
+                  className="w-40 h-40 object-cover rounded border"
+                />
+              )}
+            </div>
+          ) : user?.verificationStatus === "approved" ? (
+            <div className="space-y-2">
+              <span className="text-green-600 font-medium">Verified ✅</span>
+              {user.idCardUrl && (
+                <img
+                  src={user.idCardUrl}
+                  alt="Approved ID"
+                  className="w-40 h-40 object-cover rounded border"
+                />
+              )}
+              {user.idCardExpiresAt && (
+                <p className="text-sm text-gray-500">
+                  Expires on{" "}
+                  {new Date(user.idCardExpiresAt).toLocaleDateString()}
+                </p>
+              )}
+              <button
+                onClick={handleRemove}
+                disabled={uploading}
+                className="text-red-600 hover:underline disabled:opacity-50"
+              >
+                {uploading ? "Removing..." : "Remove Verification"}
+              </button>
+            </div>
+          ) : user?.verificationStatus === "rejected" ? (
+            <div className="space-y-2">
+              <span className="text-red-600 font-medium">
+                Verification rejected. Please re-upload.
+              </span>
+              <input type="file" accept="image/*" onChange={handleFileChange} />
+              {previewSrc && (
+                <img
+                  src={previewSrc}
+                  alt="Preview"
+                  className="w-40 h-40 object-cover rounded border"
+                />
+              )}
+              <button
+                onClick={handleVerify}
+                disabled={uploading}
+                className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {uploading ? "Uploading..." : "Re-upload ID"}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <input type="file" accept="image/*" onChange={handleFileChange} />
+              {previewSrc && (
+                <img
+                  src={previewSrc}
+                  alt="Preview"
+                  className="w-40 h-40 object-cover rounded border"
+                />
+              )}
+              <button
+                onClick={handleVerify}
+                disabled={uploading}
+                className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {uploading ? "Uploading..." : "Upload & Verify"}
+              </button>
+            </div>
+          )}
+        </section>
+
+        {/* Skills */}
+        <section className="bg-white p-6 rounded-lg shadow">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-semibold">Your Skills</h3>
+            <Link
+              href="/skills/new"
+              className="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm"
+            >
+              + Add Skill
+            </Link>
+          </div>
+          {skills.length ? (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {skills.map(s => (
+                <Link
+                  key={s._id}
+                  href={`/skills/${s._id}`}
+                  className="block p-4 border rounded-lg hover:shadow-lg transition"
+                >
+                  <h4 className="font-medium text-indigo-700">{s.title}</h4>
+                  <p className="text-sm text-gray-500 mt-1 line-clamp-2">
+                    {s.description}
+                  </p>
+                  <div className="mt-2 flex justify-between text-xs text-gray-500">
+                    <span>{s.category}</span>
+                    <span>{s.experience}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500">No skills added yet.</p>
+          )}
+        </section>
       </div>
     </div>
   )

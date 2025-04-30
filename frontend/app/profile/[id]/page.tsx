@@ -6,7 +6,10 @@ import { useParams, useRouter } from "next/navigation"
 interface UserProfile {
   _id: string
   username: string
-  email: string
+  email?: string
+  bio?: string
+  phone?: string
+  dob?: string
   createdAt?: string
 }
 
@@ -42,9 +45,12 @@ export default function PublicProfilePage() {
 
   return (
     <div className="max-w-xl mx-auto mt-10 bg-white p-6 rounded shadow">
-      <h1 className="text-2xl font-bold mb-2">{user.username}</h1>
-      <p className="text-sm text-gray-500">Email: {user.email}</p>
-      <p className="text-xs text-gray-400 mt-1">Joined: {new Date(user.createdAt!).toLocaleDateString()}</p>
+      <h1 className="text-2xl font-bold mb-1">{user.username}</h1>
+      {user.bio && <p className="text-gray-700 mb-1"><strong>Bio:</strong> {user.bio}</p>}
+      {user.phone && <p className="text-gray-700 mb-1"><strong>Phone:</strong> {user.phone}</p>}
+      {user.dob && <p className="text-gray-700 mb-1"><strong>DOB:</strong> {new Date(user.dob).toLocaleDateString()}</p>}
+      {user.email && <p className="text-gray-500 text-sm">📧 {user.email}</p>}
+      <p className="text-xs text-gray-400 mt-2">Joined: {new Date(user.createdAt!).toLocaleDateString()}</p>
 
       <button
         onClick={startChat}

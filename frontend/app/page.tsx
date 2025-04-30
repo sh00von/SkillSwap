@@ -12,6 +12,8 @@ export default function Home() {
       <nav className="bg-white shadow p-4 flex justify-between items-center px-8">
         <h1 className="text-xl font-bold text-indigo-600">SkillSwap</h1>
         <div className="space-x-4">
+          <button onClick={() => router.push("/admin")} className="text-sm text-gray-600">
+            Admin</button>
           <button onClick={() => router.push("/login")} className="text-sm text-gray-600">
             Log In
           </button>

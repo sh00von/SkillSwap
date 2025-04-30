@@ -8,6 +8,8 @@ interface User {
   username: string
   email: string
   createdAt: string
+  latitude?: number
+  longitude?: number
 }
 
 export default function AllUsersPage() {
@@ -41,6 +43,7 @@ export default function AllUsersPage() {
                 <div className="text-lg font-semibold text-indigo-700 hover:underline">{user.username}</div>
               </Link>
               <p className="text-sm text-gray-600">{user.email}</p>
+              <p className="text-sm text-gray-500">Location: {user.latitude}, {user.longitude}</p>
               <p className="text-xs text-gray-400">Joined: {new Date(user.createdAt).toLocaleDateString()}</p>
             </li>
           ))}

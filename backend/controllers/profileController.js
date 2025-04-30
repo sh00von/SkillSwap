@@ -71,14 +71,15 @@ exports.getProfile = async (req, res) => {
     return res.status(500).json({ message: err.message });
   }
 };
+
 // PUT /api/auth/profile (protected)
 exports.updateProfile = async (req, res) => {
   try {
-    const { username, email } = req.body;
+    const { username, bio, phone, dob } = req.body;
 
     const updatedUser = await User.findByIdAndUpdate(
       req.user.userId,
-      { username, email },
+      { username, bio, phone, dob },
       { new: true, runValidators: true }
     ).select("-password");
 
@@ -93,7 +94,7 @@ exports.updateProfile = async (req, res) => {
 // GET /api/users/:id (public)
 exports.getPublicProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select("username email createdAt");
+    const user = await User.findById(req.params.id).select("username email createdAt bio phone dob");
     if (!user) return res.status(404).json({ message: "User not found" });
 
     res.status(200).json(user);
@@ -101,13 +102,19 @@ exports.getPublicProfile = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch profile", error: error.message });
   }
 };
+
 // GET /api/users - List all users
 exports.getAllUsers = async (req, res) => {
-    try {
-      const users = await User.find().select("username email createdAt");
-      res.status(200).json(users);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch users", error: error.message });
-    }
-  };
-  
+  try {
+    // Include latitude & longitude in the returned fields
+    const users = await User.find()
+      .select("username email createdAt latitude longitude")
+      .lean();  // .lean() can be added if you want plain JS objects
+
+    res.status(200).json(users);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Failed to fetch users", error: error.message });
+  }
+};

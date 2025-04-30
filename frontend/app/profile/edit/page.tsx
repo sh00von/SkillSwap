@@ -7,7 +7,9 @@ import { getToken } from "@/lib/auth"
 export default function EditProfilePage() {
   const router = useRouter()
   const [username, setUsername] = useState("")
-  const [email, setEmail] = useState("")
+  const [bio, setBio] = useState("")
+  const [phone, setPhone] = useState("")
+  const [dob, setDob] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
@@ -22,7 +24,9 @@ export default function EditProfilePage() {
       .then((res) => res.json())
       .then((data) => {
         setUsername(data.user?.username || "")
-        setEmail(data.user?.email || "")
+        setBio(data.user?.bio || "")
+        setPhone(data.user?.phone || "")
+        setDob(data.user?.dob?.slice(0, 10) || "") // Format: YYYY-MM-DD
       })
       .catch(() => setError("Failed to load profile"))
       .finally(() => setIsLoading(false))
@@ -41,7 +45,7 @@ export default function EditProfilePage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ username, email }),
+        body: JSON.stringify({ username, bio, phone, dob }),
       })
 
       const data = await res.json()
@@ -68,13 +72,28 @@ export default function EditProfilePage() {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="Username"
+          required
         />
         <input
           className="w-full p-2 border rounded"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="Phone"
+        />
+        <input
+          className="w-full p-2 border rounded"
+          type="date"
+          value={dob}
+          onChange={(e) => setDob(e.target.value)}
+          placeholder="Date of Birth"
+        />
+        <textarea
+          className="w-full p-2 border rounded"
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          placeholder="Bio (optional)"
+          rows={3}
         />
         <button
           type="submit"

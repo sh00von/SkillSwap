@@ -1,130 +1,273 @@
 // controllers/paymentController.js
-const Payment   = require('../models/Payment');
-const Skill     = require('../models/Skill');
-const Task      = require('../models/Task');
-const Points    = require('../models/Points');
-const Milestone = require('../models/Milestone');
-const Notification = require('../models/Notification');
 
-exports.createPayment = async (req, res) => {
+const qs           = require('qs')
+const axios        = require('axios')
+const Payment      = require('../models/Payment')
+const Skill        = require('../models/Skill')
+const Task         = require('../models/Task')
+const Points       = require('../models/Points')
+const Milestone    = require('../models/Milestone')
+const Notification = require('../models/Notification')
+
+// SSLCommerz config
+const {
+  SSL_STORE_ID,
+  SSL_STORE_PASSWORD,
+  SSL_SANDBOX,
+  BASE_URL,
+  FRONTEND_URL
+} = process.env
+
+const INIT_URL     = SSL_SANDBOX === 'true'
+  ? 'https://sandbox.sslcommerz.com/gwprocess/v3/api.php'
+  : 'https://securepay.sslcommerz.com/gwprocess/v3/api.php'
+
+const VALIDATE_URL = SSL_SANDBOX === 'true'
+  ? 'https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php'
+  : 'https://securepay.sslcommerz.com/validator/api/validationserverAPI.php'
+
+
+/**
+ * POST /api/payments/initiate
+ */
+exports.initiatePayment = async (req, res) => {
   try {
-    const userId = req.user.userId;
-    const { skillId, amount, method, slotDate } = req.body;
+    const userId   = req.user.userId
+    const { skillId } = req.body
 
-    // 1. Validate required fields
-    if (!skillId || typeof amount !== 'number') {
-      return res
-        .status(400)
-        .json({ message: 'skillId (string) and amount (number) are required.' });
-    }
+    const skill = await Skill.findById(skillId)
+    if (!skill) return res.status(404).json({ message: 'Skill not found' })
 
-    // 2. Ensure skill exists
-    const skill = await Skill.findById(skillId).populate('offeredBy', 'username');
-    if (!skill) {
-      return res.status(404).json({ message: 'Skill not found.' });
-    }
-
-    // 3. Parse & validate optional slotDate
-    let parsedSlotDate = null;
-    if (slotDate) {
-      parsedSlotDate = new Date(slotDate);
-      if (isNaN(parsedSlotDate.getTime())) {
-        return res.status(400).json({ message: 'slotDate must be a valid date string.' });
-      }
-    }
-
-    // 4. Create & save the payment (status stays 'pending')
     const payment = await Payment.create({
-      user:     userId,
-      skill:    skillId,
-      amount,
-      method:   method || 'bKash',
-      status:   'pending',
-      slotDate: parsedSlotDate
-    });
+      user:              userId,
+      skill:             skillId,
+      amount:            skill.price,
+      method:            'sslcommerz',
+      status:            'pending',
+      transactionId:     null,
+      gatewaySessionUrl: null
+    })
 
-    // 5. Notify the skill owner about this new swap request
-    await Notification.create({
-      recipient: skill.offeredBy._id,             // the owner of the skill
-      type:      'swap_request',
-      message:   `${skill.offeredBy.username}, you have a new swap request for "${skill.title}".`,
-      data: {
-        paymentId: payment._id,
-        skillId:   skill._id,
-        requester: userId,
-        slotDate:  parsedSlotDate
-      }
-    });
+    const payload = {
+      store_id:     SSL_STORE_ID,
+      store_passwd: SSL_STORE_PASSWORD,
+      total_amount: skill.price,
+      currency:     'BDT',
+      tran_id:      payment._id.toString(),
+      success_url:  `${BASE_URL}/api/payments/success`,
+      fail_url:     `${BASE_URL}/api/payments/fail`,
+      cancel_url:   `${BASE_URL}/api/payments/cancel`,
+      ipn_url:      `${BASE_URL}/api/payments/ipn`,
+      product_name: skill.title,
+      cus_name:     req.user.username || '',
+      cus_email:    req.user.email || ''
+    }
 
-    // 6. Return the created payment
-    return res.status(201).json(payment);
+    const response = await axios.post(
+      INIT_URL,
+      qs.stringify(payload),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    )
 
+    const url = response.data?.GatewayPageURL
+    if (!url) {
+      return res.status(502).json({
+        message: 'Failed to initiate payment session',
+        data:    response.data
+      })
+    }
+
+    payment.gatewaySessionUrl = url
+    payment.transactionId     = payment._id.toString()
+    await payment.save()
+
+    return res.status(200).json({ url })
   } catch (err) {
-    console.error('❌ createPayment error:', err);
-    return res.status(500).json({ message: err.message });
+    console.error('❌ initiatePayment error:', err)
+    return res.status(500).json({ message: err.message })
   }
-};
+}
+
+
+/**
+ * GET /api/payments/success
+ */
+exports.success = async (req, res) => {
+  try {
+    const { val_id, tran_id } = req.query
+    const validateRes = await axios.get(
+      `${VALIDATE_URL}?val_id=${val_id}&store_id=${SSL_STORE_ID}&store_passwd=${SSL_STORE_PASSWORD}&format=json`
+    )
+    const data = validateRes.data
+
+    if (data.status === 'VALID' && data.tran_id === tran_id) {
+      const payment = await Payment.findByIdAndUpdate(
+        tran_id,
+        {
+          status:            'swapped',
+          slotDate:          new Date(),
+          valId:             data.val_id,
+          currency:          data.currency,
+          storeAmount:       parseFloat(data.currency_amount),
+          cardType:          data.card_type,
+          cardNo:            data.card_no
+        },
+        { new: true }
+      ).populate('skill', 'title offeredBy')
+
+      const requesterId = payment.user
+      const skillObj    = payment.skill
+
+      // award swap task & points
+      await Task.create({
+        user:          requesterId,
+        skill:         skillObj._id,
+        type:          'swap',
+        status:        'completed',
+        pointsAwarded: 10
+      })
+      await Points.findOneAndUpdate(
+        { user: requesterId },
+        { $inc: { totalPoints: 10 } },
+        { upsert: true }
+      )
+
+      // check 3-swap milestone
+      const completedCount = await Task.countDocuments({
+        user:   requesterId,
+        type:   'swap',
+        status: 'completed'
+      })
+      if (completedCount === 3) {
+        const exists = await Milestone.findOne({
+          user:        requesterId,
+          type:        'swap',
+          targetCount: 3
+        })
+        if (!exists) {
+          await Milestone.create({
+            user:          requesterId,
+            type:          'swap',
+            targetCount:   3,
+            isCompleted:   true,
+            pointsAwarded: 5,
+            completedAt:   new Date()
+          })
+          await Points.findOneAndUpdate(
+            { user: requesterId },
+            { $inc: { totalPoints: 5 } }
+          )
+        }
+      }
+
+      // notify requester
+      await Notification.create({
+        recipient: requesterId,
+        type:      'swap_approved',
+        message:   `Your payment for "${skillObj.title}" succeeded.`,
+        data:      { paymentId: tran_id }
+      })
+
+      return res.redirect(`${FRONTEND_URL}/payment-success`)
+    } else {
+      return res.redirect(`${FRONTEND_URL}/payment-success`)
+    }
+  } catch (err) {
+    console.error('❌ success callback error:', err)
+    return res.status(500).send('Validation error')
+  }
+}
+
+
+/**
+ * GET /api/payments/fail
+ */
+exports.fail = async (req, res) => {
+  const { tran_id } = req.query
+  await Payment.findByIdAndUpdate(tran_id, { status: 'failed' })
+  return res.redirect(`${FRONTEND_URL}/payment-fail?tran_id=${tran_id}`)
+}
+
+
+/**
+ * GET /api/payments/cancel
+ */
+exports.cancel = async (req, res) => {
+  const { tran_id } = req.query
+  await Payment.findByIdAndUpdate(tran_id, { status: 'failed' })
+  return res.redirect(`${FRONTEND_URL}/payment-cancel?tran_id=${tran_id}`)
+}
+
+
+/**
+ * POST /api/payments/ipn
+ */
+exports.ipn = (req, res) => {
+  res.sendStatus(200)
+}
+
 
 /**
  * PUT /api/payments/:paymentId/confirm
- * Owner confirms a slot, sets slotDate and flips status to 'swapped',
- * then logs the swap task, awards points, and checks the 3-swap milestone.
+ * Skill owner confirms a pending swap request.
  */
 exports.confirmSlot = async (req, res) => {
   try {
-    const ownerId   = req.user.userId;
-    const paymentId = req.params.paymentId;
-    const { slotDate } = req.body; // ISO date string
+    const ownerId   = req.user.userId
+    const paymentId = req.params.paymentId
+    const { slotDate } = req.body
 
-    // 1. Find & validate payment (populate skill for notification text)
     const payment = await Payment
       .findById(paymentId)
-      .populate('skill', 'title offeredBy');
+      .populate('skill', 'offeredBy title')
     if (!payment) {
-      return res.status(404).json({ message: 'Payment not found' });
+      return res.status(404).json({ message: 'Payment not found' })
+    }
+    // only the skill owner can confirm
+    if (payment.skill.offeredBy.toString() !== ownerId) {
+      return res.status(403).json({ message: 'Not authorized' })
     }
     if (payment.status !== 'pending') {
-      return res
-        .status(400)
-        .json({ message: 'Only pending payments can be confirmed' });
+      return res.status(400).json({ message: 'Only pending payments can be confirmed' })
     }
 
-    // 2. Update slotDate & status
-    payment.slotDate = new Date(slotDate);
-    payment.status   = 'swapped';
-    await payment.save();
+    const parsed = new Date(slotDate)
+    if (isNaN(parsed.getTime())) {
+      return res.status(400).json({ message: 'slotDate must be valid' })
+    }
 
-    // 3. Award the swap task & 10 points
-    const { user: requesterId, skill: skillObj } = payment;
-    const skillId = skillObj._id;
+    payment.slotDate = parsed
+    payment.status   = 'swapped'
+    await payment.save()
+
+    const requesterId = payment.user
+    const skillObj    = payment.skill
+
     await Task.create({
       user:          requesterId,
-      skill:         skillId,
+      skill:         skillObj._id,
       type:          'swap',
       status:        'completed',
       pointsAwarded: 10
-    });
+    })
     await Points.findOneAndUpdate(
       { user: requesterId },
       { $inc: { totalPoints: 10 } },
       { upsert: true }
-    );
+    )
 
-    // 4. Check & award 3-swap milestone bonus
-    const completedSwaps = await Task.countDocuments({
+    const completedCount = await Task.countDocuments({
       user:   requesterId,
       type:   'swap',
       status: 'completed'
-    });
-
-    if (completedSwaps === 3) {
-      const already = await Milestone.findOne({
+    })
+    if (completedCount === 3) {
+      const exists = await Milestone.findOne({
         user:        requesterId,
         type:        'swap',
         targetCount: 3
-      });
-
-      if (!already) {
+      })
+      if (!exists) {
         await Milestone.create({
           user:          requesterId,
           type:          'swap',
@@ -132,92 +275,80 @@ exports.confirmSlot = async (req, res) => {
           isCompleted:   true,
           pointsAwarded: 5,
           completedAt:   new Date()
-        });
+        })
         await Points.findOneAndUpdate(
           { user: requesterId },
           { $inc: { totalPoints: 5 } }
-        );
+        )
       }
     }
 
-    // 5. Notify the requester that their swap was approved
     await Notification.create({
       recipient: requesterId,
       type:      'swap_approved',
-      message:   `Your swap request for "${skillObj.title}" has been approved for ${payment.slotDate.toLocaleString()}.`,
-      data: {
-        paymentId,
-        skillId,
-        slotDate: payment.slotDate
-      }
-    });
+      message:   `Your swap for "${payment.skill.title}" is confirmed for ${parsed.toLocaleString()}.`,
+      data:      { paymentId, slotDate: parsed }
+    })
 
-    return res.status(200).json(payment);
-
+    return res.status(200).json(payment)
   } catch (err) {
-    console.error('❌ confirmSlot error:', err);
-    return res.status(500).json({ message: err.message });
+    console.error('❌ confirmSlot error:', err)
+    return res.status(500).json({ message: err.message })
   }
-};
+}
 
 
-// GET /api/payments — return all payments for the logged in user
+/**
+ * GET /api/payments
+ */
 exports.getPayments = async (req, res) => {
   try {
-    const userId = req.user.userId;
     const payments = await Payment
-      .find({ user: userId })
-      .populate('skill', 'title price');
-    return res.status(200).json(payments);
+      .find({ user: req.user.userId })
+      .populate('skill', 'title price')
+    return res.status(200).json(payments)
   } catch (err) {
-    console.error('❌ getPayments error:', err);
-    return res.status(500).json({ message: err.message });
+    console.error('❌ getPayments error:', err)
+    return res.status(500).json({ message: err.message })
   }
-};
+}
 
-// GET /api/payments/check/:skillId — check if user has paid for a skill
+
+/**
+ * GET /api/payments/check/:skillId
+ */
 exports.checkPaymentStatus = async (req, res) => {
   try {
-    const userId  = req.user.userId;
-    const { skillId } = req.params;
-
+    const { skillId } = req.params
     if (!skillId) {
-      return res.status(400).json({ message: "Skill ID is required" });
+      return res.status(400).json({ message: 'Skill ID required' })
     }
-
-    const existingPayment = await Payment.findOne({
-      user:   userId,
+    const existing = await Payment.findOne({
+      user:   req.user.userId,
       skill:  skillId,
-      status: { $in: ["pending", "completed"] }
-    });
-
-    return res.status(200).json({ hasPaid: !!existingPayment });
+      status: { $in: ['pending', 'swapped'] }
+    })
+    return res.status(200).json({ hasPaid: !!existing })
   } catch (err) {
-    console.error("❌ checkPaymentStatus error:", err);
-    return res.status(500).json({ message: err.message });
+    console.error('❌ checkPaymentStatus error:', err)
+    return res.status(500).json({ message: err.message })
   }
-};
+}
+
+
+/**
+ * GET /api/payments/swaps
+ */
 exports.listSwaps = async (req, res) => {
   try {
-    const userId = req.user.userId;
-
-    // fetch all pending swap payments
-    const pending = await Payment.find({
-      user:   userId,
-      status: 'pending'
-    })
-    .populate('skill', 'title price');
-
-    // fetch all approved (swapped) payments
-    const approved = await Payment.find({
-      user:   userId,
-      status: 'swapped'
-    })
-    .populate('skill', 'title price');
-
-    return res.status(200).json({ pending, approved });
+    const userId  = req.user.userId
+    const pending  = await Payment.find({ user: userId, status: 'pending' })
+      .populate('skill', 'title price')
+    const approved = await Payment.find({ user: userId, status: 'swapped' })
+      .populate('skill', 'title price')
+    return res.status(200).json({ pending, approved })
   } catch (err) {
-    console.error('❌ listSwaps error:', err);
-    return res.status(500).json({ message: err.message });
+    console.error('❌ listSwaps error:', err)
+    return res.status(500).json({ message: err.message })
   }
-};
+}

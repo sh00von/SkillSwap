@@ -55,7 +55,6 @@ export default function SkillCard({
           </div>
           <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
             <div className="text-sm text-gray-500">Experience: {experience}</div>
-            <div className="text-sm text-gray-500">By: {user.username}</div>
           </div>
         </div>
       </div>

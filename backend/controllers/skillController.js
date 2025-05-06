@@ -32,6 +32,7 @@ exports.getSkills = async (req, res) => {
 };
 
 // GET /api/skills/:skillId
+// GET /api/skills/:skillId
 exports.getSkillById = async (req, res) => {
   try {
     const { skillId } = req.params;
@@ -41,10 +42,22 @@ exports.getSkillById = async (req, res) => {
       .populate({
         path: 'reviews',
         populate: { path: 'user', select: 'username' }
+      })
+      .populate({
+        path: 'offeredBy',
+        select: 'username'  // Select only the username for offeredBy
       });
 
     if (!skill) {
       return res.status(404).json({ message: 'Skill not found' });
+    }
+
+    // Restructure the offeredBy to match the required format
+    if (skill.offeredBy) {
+      skill.offeredBy = {
+        _id: skill.offeredBy._id,
+        username: skill.offeredBy.username,
+      };
     }
 
     res.status(200).json(skill);
@@ -52,6 +65,7 @@ exports.getSkillById = async (req, res) => {
     res.status(500).json({ message: 'Error fetching skill', error: error.message });
   }
 };
+
 // POST /api/skills
 exports.createSkill = async (req, res) => {
   try {

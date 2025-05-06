@@ -153,6 +153,11 @@ export default function Header() {
             Forum
           </Link>
           <Link
+            href="/map"
+            className="text-sm text-gray-600 hover:text-indigo-600">
+              Nearby Users
+            </Link>
+          <Link
             href="/admin"
             className="text-sm text-gray-600 hover:text-indigo-600"
           >

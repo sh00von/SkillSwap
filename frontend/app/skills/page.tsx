@@ -222,7 +222,7 @@ export default function SkillsPage() {
                     <p className="text-gray-600 mt-2 line-clamp-2">{skill.description}</p>
                     <div className="mt-4 flex justify-between items-center text-sm text-gray-500">
                       <div>
-                        <span className="font-medium">₹{skill.price}</span>
+                        <span className="font-medium">{skill.price}</span>
                       </div>
                       <div>
                         <span className="text-yellow-500">★</span>{" "}
@@ -232,7 +232,6 @@ export default function SkillsPage() {
                     </div>
                     <div className="mt-4 pt-4 border-t border-gray-100 text-sm text-gray-500 flex justify-between">
                       <span>Exp: {skill.experience}</span>
-                      <span>By: {skill.offeredBy.username}</span>
                     </div>
                     <div className="mt-2 text-xs text-gray-400">Loc: {skill.location}</div>
                   </div>

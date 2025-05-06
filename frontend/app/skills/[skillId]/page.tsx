@@ -24,7 +24,7 @@ interface Skill {
   experience: string;
   location: string;
   price: number;
-  user?: {
+  offeredBy?: {
     _id: string;
     username: string;
   };
@@ -89,6 +89,7 @@ export default function SkillDetailPage() {
         const skillData: Skill = await r1.json();
         setSkill(skillData);
         setPaymentAmount(skillData.price);
+        console.log(skillData);
 
         // Reviews
         const r2 = await fetch(`${API_BASE}/skills/${skillId}/reviews`);
@@ -256,7 +257,7 @@ export default function SkillDetailPage() {
             </div>
             <div>
               <h3 className="font-semibold">Offered By</h3>
-              <p>{skill.user?.username ?? "Unknown"}</p>
+              <p>{skill.offeredBy?.username ?? "Unknown"}</p>
             </div>
           </div>
 

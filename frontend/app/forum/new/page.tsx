@@ -3,29 +3,40 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 
+// Define types for your category and post
+interface Category {
+  _id: string
+  name: string
+  description: string
+}
 
+interface PostData {
+  title: string
+  content: string
+  categoryId: string
+}
 
 export default function CreatePostPage() {
   const router = useRouter()
-  const [categories, setCategories] = useState([])
-  const [title, setTitle] = useState("")
-  const [content, setContent] = useState("")
-  const [categoryId, setCategoryId] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
-
-
+  
+  // Define types for state variables
+  const [categories, setCategories] = useState<Category[]>([])
+  const [title, setTitle] = useState<string>("")
+  const [content, setContent] = useState<string>("")
+  const [categoryId, setCategoryId] = useState<string>("")
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string>("")
 
   useEffect(() => {
     fetch("http://localhost:5000/api/forum/categories")
       .then((res) => res.json())
-      .then((data) => {
+      .then((data: Category[]) => {
         setCategories(data)
         if (data.length > 0) setCategoryId(data[0]._id)
       })
   }, [])
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setLoading(true)
     setError("")

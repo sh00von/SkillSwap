@@ -1,0 +1,29 @@
+{
+    "version": 2,
+    "builds": [
+      {
+        "src": "index.js",
+        "use": "@vercel/node"
+      }
+    ],
+    "routes": [
+      {
+        "src": "/api/(.*)",
+        "dest": "/index.js"
+      }
+    ],
+    "env": {
+      "MONGODB_URI": "mongodb+srv://minarsvn:idfKVrhgW5gFSW2S@cluster0.pad3few.mongodb.net/skill_swap?retryWrites=true&w=majority&appName=Cluster0",
+      "JWT_SECRET": "your_jwt_secret_key_here",
+      "IMGBB_KEY": "855fa6e05dbd3475f0195606dbf4b183",
+      "ADMIN_USERNAME": "admin",
+      "ADMIN_PASSWORD": "secretpassword",
+      "ADMIN_JWT_SECRET": "your_admin_jwt_secret",
+      "SSL_STORE_ID": "skill6800aa2b1a8fd",
+      "SSL_STORE_PASSWORD": "skill6800aa2b1a8fd@ssl",
+      "SSL_SANDBOX": "true",
+      "BASE_URL": "http://localhost:5000",
+      "FRONTEND_URL": "http://localhost:3000"
+    }
+  }
+  

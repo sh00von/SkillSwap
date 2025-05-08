@@ -3,11 +3,27 @@
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 
+// Define types for your data and posts
+interface Post {
+  _id: string
+  title: string
+  author?: { username: string }
+  createdAt: string
+  category: string
+}
+
+interface Category {
+  name: string
+  posts: Post[]
+}
+
 export default function ForumPage() {
   const router = useRouter()
-  const [data, setData] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [selectedCategory, setSelectedCategory] = useState("all")
+
+  // Explicitly type the state variables
+  const [data, setData] = useState<Category[]>([])
+  const [loading, setLoading] = useState<boolean>(true)
+  const [selectedCategory, setSelectedCategory] = useState<string>("all")
 
   useEffect(() => {
     fetch("http://localhost:5000/api/forum")

@@ -5,6 +5,7 @@ import dynamic from "next/dynamic"
 import "leaflet/dist/leaflet.css"
 import { getToken } from "@/lib/auth"
 
+// Define the types for your user and marker icon
 interface User {
   _id: string
   username: string
@@ -33,10 +34,10 @@ const Popup = dynamic(
 )
 
 export default function MapPage() {
-  const [users, setUsers] = useState<User[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState("")
-  const [markerIcon, setMarkerIcon] = useState<any>(null)
+  const [users, setUsers] = useState<User[]>([]) // Typed as an array of User objects
+  const [loading, setLoading] = useState<boolean>(true) // Loading state
+  const [error, setError] = useState<string>("") // Error state
+  const [markerIcon, setMarkerIcon] = useState<L.Icon | null>(null) // Leaflet Icon type
 
   // Fetch users
   useEffect(() => {
@@ -80,7 +81,7 @@ export default function MapPage() {
 
   // Filter out users without valid coordinates
   const validUsers = users.filter(
-    u =>
+    (u) =>
       typeof u.latitude === "number" &&
       typeof u.longitude === "number" &&
       !isNaN(u.latitude) &&
@@ -99,7 +100,7 @@ export default function MapPage() {
 
   return (
     <div className="h-screen w-full">
-      <MapContainer
+      <MapContainer 
         center={center}
         zoom={3}
         scrollWheelZoom={true}
@@ -109,7 +110,7 @@ export default function MapPage() {
           attribution='&copy; <a href="https://osm.org/">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {validUsers.map(u => (
+        {validUsers.map((u) => (
           <Marker
             key={u._id}
             position={[u.latitude!, u.longitude!]}

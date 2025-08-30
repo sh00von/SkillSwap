@@ -181,18 +181,21 @@ export default function SkillDetailPage() {
       }
 
       // Legacy swap request
+      const reqBody: any = {
+        skillId,
+        amount: paymentAmount,
+        method: paymentMethod,
+      };
+      if (paymentMethod !== "sslcommerz" && slotDate) {
+        reqBody.slotDate = new Date(slotDate).toISOString();
+      }
       const res = await fetch(`${API_BASE}/payments`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          skillId,
-          amount: paymentAmount,
-          method: paymentMethod,
-          slotDate: slotDate ? new Date(slotDate).toISOString() : undefined,
-        }),
+        body: JSON.stringify(reqBody),
       });
       const payload = await res.json();
       if (!res.ok) {
@@ -303,31 +306,27 @@ export default function SkillDetailPage() {
                 </select>
               </div>
 
-              {paymentMethod !== "sslcommerz" && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Amount (₹)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={paymentAmount}
-                      onChange={e => setPaymentAmount(+e.target.value)}
-                      className="w-full p-2 border rounded"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Slot Date & Time
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={slotDate}
-                      onChange={e => setSlotDate(e.target.value)}
-                      className="w-full p-2 border rounded"
-                    />
-                  </div>
-                </>
-              )}
+              <div>
+                <label className="block text-sm font-medium mb-1">Amount (₹)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={paymentAmount}
+                  onChange={e => setPaymentAmount(+e.target.value)}
+                  className="w-full p-2 border rounded"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Slot Date & Time
+                </label>
+                <input
+                  type="datetime-local"
+                  value={slotDate}
+                  onChange={e => setSlotDate(e.target.value)}
+                  className="w-full p-2 border rounded"
+                />
+              </div>
 
               <div className="flex justify-end space-x-2">
                 <button
